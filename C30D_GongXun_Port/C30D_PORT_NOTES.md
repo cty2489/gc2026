@@ -1,10 +1,56 @@
 # C30D_GongXun_Port 移植说明
 
+作者：陈天远
+
 本目录是从 `GongXun2025-main/控制代码` 复制出来的移植工程，原工程不改。
 
 ## 当前目标
 
-先验证 C30D 主控板 + HWT101 + 串口张大头闭环步进电机能不能跑出原 GongXun 底盘控制效果。
+先验证 C30D 主控板 + HWT101 + 串口张大头闭环步进电机能不能跑出原 GongXun 底盘控制效果。当前阶段已经完成 USART2 共用方案验证：PD5 用于向张大头驱动器发送控制指令，PD6 用于接收 HWT101 主动上报的角度数据。
+
+## 本版改动内容
+
+作者：陈天远
+
+本版在复制工程 `C30D_GongXun_Port` 中完成以下改动：
+
+1. 将张大头步进电机控制口固定为 `USART2_TX/PD5`，用于向驱动器 RX 单向发送速度、停止和同步运动指令。
+2. 将 HWT101 从原先移植测试用的 `USART3_RX/PD9` 改为 `USART2_RX/PD6`，与步进电机共用 USART2，但只使用接收方向。
+3. 将 USART2 初始化模式改为 `USART_Mode_Tx | USART_Mode_Rx`，避免步进和 HWT101 分别初始化时互相关闭收发方向。
+4. 将 HWT101 接收 DMA 改为 `DMA1_Stream5`，并将空闲中断入口改为 `USART2_IRQHandler`。
+5. 保留 C30D 原生 OLED 显示支持，用于显示 HWT101 角度、角速度、接收状态和测试状态。
+6. 增加 HWT101 单独测试模式、四轮张大头逐个测试模式、底盘单独测试模式三种入口，方便逐步调试。
+
+## 可实现内容
+
+作者：陈天远
+
+当前代码可以实现：
+
+1. 在 C30D 主控板上通过 `PD5/USART2_TX` 控制张大头闭环步进驱动器。
+2. 在 C30D 主控板上通过 `PD6/USART2_RX` 接收 HWT101 的 Yaw 和 Wz 数据。
+3. 在 OLED 上实时显示 HWT101 的偏航角、角速度和接收标志位。
+4. 通过 C30D 原厂按键 `PE0` 对当前 Yaw 显示值进行清零。
+5. 通过四轮测试模式逐个验证 ID1、ID2、ID3、ID4 的轮子编号和正反转方向。
+6. 为后续恢复底盘闭环运动测试提供统一的串口和 IO 映射基础。
+
+## IO 口定义总表
+
+作者：陈天远
+
+| 功能模块 | C30D IO | 外设功能 | 连接对象 | 当前用途 |
+| --- | --- | --- | --- | --- |
+| 张大头步进驱动器 | PD5 | USART2_TX | 驱动器 RX | 主控单向发送控制指令 |
+| HWT101 | PD6 | USART2_RX | HWT101 TX | 主控接收角度和角速度数据 |
+| C30D 原厂按键 | PE0 | GPIO 输入 | 板载 KEY | 测试触发、Yaw 清零 |
+| OLED RST | PD12 | GPIO 输出 | OLED RST | C30D 原生 OLED 复位 |
+| OLED DC/RS | PD11 | GPIO 输出 | OLED DC/RS | C30D 原生 OLED 命令/数据选择 |
+| OLED SCL | PD14 | GPIO 输出 | OLED SCL | C30D 原生 OLED 时钟 |
+| OLED SDA | PD13 | GPIO 输出 | OLED SDA | C30D 原生 OLED 数据 |
+| 视觉摄像头 TX | PC12 | UART5_TX | 摄像头 RX | 保持 GongXun 原分配 |
+| 视觉摄像头 RX | PD2 | UART5_RX | 摄像头 TX | 保持 GongXun 原分配 |
+| 二维码模块 TX | PC10 | UART4_TX | 二维码 RX | 保持 GongXun 原分配 |
+| 二维码模块 RX | PC11 | UART4_RX | 二维码 TX | 保持 GongXun 原分配 |
 
 ## 测试按键
 

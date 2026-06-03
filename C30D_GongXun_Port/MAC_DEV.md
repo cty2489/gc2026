@@ -1,5 +1,7 @@
 # Mac 开发说明
 
+作者：陈天远
+
 本工程已经补了 GNU ARM 工具链支持，可以在 macOS 下不用 Keil 编译。
 
 ## 编译
@@ -87,4 +89,13 @@ code .
 
 ## 注意
 
-当前 `User/main.c` 默认仍是 `C30D_CHASSIS_TEST = 1`，也就是底盘单独测试模式。确认底盘正常后，再把它改成 `0` 恢复完整比赛流程。
+作者：陈天远
+
+当前 `User/main.c` 默认是 HWT101 陀螺仪单独测试模式：
+
+```c
+#define C30D_HWT101_TEST 1
+#define C30D_WHEEL_STEPPER_TEST 0
+```
+
+当前 IO 分配为：`PD5/USART2_TX` 发送张大头步进电机控制指令，`PD6/USART2_RX` 接收 HWT101 主动上报数据，二者共用 USART2 的不同方向。若要切换到四轮张大头逐个测试或底盘单独测试，按 `C30D_PORT_NOTES.md` 中的运行模式说明修改宏定义。
