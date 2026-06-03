@@ -45,7 +45,7 @@ void StepMotor_HardwareInit(void)
 	USART_InitTypeDef USART_InitStructure;
 	USART_InitStructure.USART_BaudRate=115200;//配置波特率115200
 	USART_InitStructure.USART_HardwareFlowControl=USART_HardwareFlowControl_None;//配置无硬件流控制
-	USART_InitStructure.USART_Mode=USART_Mode_Tx;//配置为发送模式
+	USART_InitStructure.USART_Mode=USART_Mode_Tx|USART_Mode_Rx;//USART2与HWT101共用,保留收发方向
 	USART_InitStructure.USART_Parity=USART_Parity_No;//配置为无校验位
 	USART_InitStructure.USART_StopBits=USART_StopBits_1;//配置停止位为1
 	USART_InitStructure.USART_WordLength=USART_WordLength_8b;//配置字长8bit

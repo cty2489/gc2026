@@ -14,12 +14,12 @@ void UART4_IRQHandler(void)
 }
 
 //	1		0
-void USART3_IRQHandler(void)
+void USART2_IRQHandler(void)
 {
-	if(USART_GetITStatus(USART3,USART_IT_IDLE)==SET)//查询空闲中断标志位
+	if(USART_GetITStatus(USART2,USART_IT_IDLE)==SET)//查询空闲中断标志位
 	{		
-		(void)USART3->SR;
-		(void)USART3->DR;//清除空闲中断标志位
+		(void)USART2->SR;
+		(void)USART2->DR;//清除空闲中断标志位
 		
 		HWT101_Callback();
 	}
