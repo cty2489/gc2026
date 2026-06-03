@@ -9,9 +9,9 @@
 #include "Chassis.h"
 #include "Data.h"
 
-#define Chassis_LeftFrontWheel		1//左前轮
+#define Chassis_LeftFrontWheel		2//左前轮
 #define Chassis_RightFrontWheel		4//右前轮
-#define Chassis_LeftRearWheel		2//左后轮
+#define Chassis_LeftRearWheel		1//左后轮
 #define Chassis_RightRearWheel		3//右后轮
 
 /*
@@ -136,7 +136,7 @@ void Chassis_MoveOnce(float vx,float vy,float Delta_Angle,float t,float K)
 	//确定前进方向
 	float Start_Angle=Chassis_AnglePID.Need_Value;
 	Chassis_AnglePID.Need_Value+=Delta_Angle;//Yaw角度期望
-	
+
 	/*===============加速段===============*/
 	Chassis_SINAccel(0,0,vx,vy,Start_Angle,K);//采用正弦加减速
 	
@@ -151,6 +151,7 @@ void Chassis_MoveOnce(float vx,float vy,float Delta_Angle,float t,float K)
 	Chassis_SINAccel(vx,vy,0,0,Start_Angle,K);//采用正弦加减速
 
 	Chassis_GuiWei();
+	Chassis_InverseMotionControl(0,0,0);
 	Chassis_InverseMotionControl(0,0,0);
 }
 

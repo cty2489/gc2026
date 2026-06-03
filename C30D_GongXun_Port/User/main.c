@@ -2,12 +2,13 @@
 #include "stm32f4xx_conf.h"
 #include "zpc_zxc_Headfile.h"
 
-#define C30D_HWT101_TEST			1
+#define C30D_HWT101_TEST			0
 #define C30D_WHEEL_STEPPER_TEST	0
 #define C30D_STEPPER_TEST_RPM		60
 #define C30D_CHASSIS_TEST	1
 #define C30D_USE_OLED		1
 
+#if C30D_HWT101_TEST
 static void C30D_FormatFixedLine(char *Line,float Value)
 {
 	int32_t Scaled;
@@ -35,6 +36,7 @@ static void C30D_FormatFixedLine(char *Line,float Value)
 	Line[8]=(char)('0'+Whole%10);
 	Line[10]=(char)('0'+Frac);
 }
+#endif
 
 #if C30D_WHEEL_STEPPER_TEST
 static void C30D_WaitNextKey(FlagStatus *LastKeyStatus)
@@ -171,12 +173,14 @@ int main(void)
 	OLED_ShowString(2,1,"Running  ");
 #endif
 	
-	Chassis_MoveOnce(0,80,0,120,80);	//向前慢速测试
+	/*--- 标定测试: 用原工程参数前进一次,测实际距离 ---*/
+	Chassis_MoveOnce(0,80,0,120,80);
+
 	Delay_ms(500);
-	Chassis_MoveOnce(80,0,0,120,80);	//向右平移测试
-	Delay_ms(500);
-	Chassis_TurnRight();				//右转90度测试
-	
+
+	/*--- 标定测试: 左移一次 ---*/
+	Chassis_MoveOnce(-80,0,0,120,80);
+
 #if C30D_USE_OLED
 	OLED_ShowString(2,1,"Finished ");
 #endif
