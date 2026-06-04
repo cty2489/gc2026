@@ -1,6 +1,6 @@
 # Mac 开发说明
 
-作者：陈天远
+作者：CTY
 
 本工程已经补了 GNU ARM 工具链支持，可以在 macOS 下不用 Keil 编译。
 
@@ -89,14 +89,19 @@ code .
 
 ## 注意
 
-作者：陈天远
+作者：CTY
 
-当前 `User/main.c` 默认是 C30D 底盘标定测试模式：
+当前 `User/main.c` 默认是 C30D 底盘位置模式小距离测试：
 
 ```c
 #define C30D_HWT101_TEST 0
 #define C30D_WHEEL_STEPPER_TEST 0
+#define C30D_POSITION_WHEEL_TEST 0
+#define C30D_POSITION_TEST_STEP 1600
 #define C30D_CHASSIS_TEST 1
+#define C30D_CHASSIS_TEST_MM 300
+#define C30D_CHASSIS_TEST_RPM 60
+#define C30D_CHASSIS_TEST_ACC 100
 ```
 
-当前 IO 分配为：`PD5/USART2_TX` 发送张大头步进电机控制指令，`PD6/USART2_RX` 接收 HWT101 主动上报数据，二者共用 USART2 的不同方向。当前底盘电机 ID 分配为 ID1 左后轮、ID2 左前轮、ID3 右后轮、ID4 右前轮。若要切换到 HWT101 单测或四轮张大头逐个测试，按 `C30D_PORT_NOTES.md` 中的运行模式说明修改宏定义。
+当前 IO 分配为：`PD5/USART2_TX` 发送张大头步进电机控制指令，`PD6/USART2_RX` 接收 HWT101 主动上报数据，二者共用 USART2 的不同方向。当前底盘电机 ID 分配为 ID1 左后轮、ID2 左前轮、ID3 右后轮、ID4 右前轮。当前测试按下 PE0 后执行前进 300mm、左移 300mm、后退 300mm、右移 300mm 的位置模式小方形路径，当前速度 60 RPM、Acc=100；若要切换到 HWT101 单测、速度模式四轮逐个测试或单轮位置同步测试，按 `C30D_PORT_NOTES.md` 中的运行模式说明修改宏定义。

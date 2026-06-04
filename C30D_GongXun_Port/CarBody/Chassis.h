@@ -18,6 +18,7 @@ typedef enum
 void Chassis_Init(void);																					//底盘初始化
 void Chassis_Reset(void);																					//底盘复位
 void Chassis_MoveOnce(float vx,float vy,float Delta_Angle,float t,float K);									//底盘单次移动
+void Chassis_MoveDistance(float x_mm,float y_mm,uint16_t Speed,uint8_t Acc);									//底盘按距离移动
 void Chassis_MoveOncePath(Chassis_Path Path);																//底盘单次路径移动
 void Chassis_Move(Chassis_Path Path);																		//底盘单路径移动
 void Chassis_MovePath(Chassis_Path Path);																	//底盘路径移动

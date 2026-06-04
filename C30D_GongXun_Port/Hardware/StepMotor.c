@@ -5,7 +5,7 @@
 typedef struct
 {
 	uint8_t _Flag;		//修改标志位	0-目标状态被修改 1-目标状态未修改
-	
+
 	int8_t Dir;			//方向			0-逆时针 1-顺时针
 	uint16_t Speed;		//速度
 	uint8_t Acc;		//加速度
@@ -29,7 +29,7 @@ void StepMotor_HardwareInit(void)
 	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM6,ENABLE);
 	RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2,ENABLE);
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD,ENABLE);//开启时钟
-	
+
 	/*===============配置GPIO===============*/
 	GPIO_InitTypeDef GPIO_InitStructure;
 	GPIO_InitStructure.GPIO_Mode=GPIO_Mode_AF;
@@ -38,9 +38,9 @@ void StepMotor_HardwareInit(void)
 	GPIO_InitStructure.GPIO_Pin=GPIO_Pin_5;
 	GPIO_InitStructure.GPIO_Speed=GPIO_Speed_100MHz;
 	GPIO_Init(GPIOD,&GPIO_InitStructure);//初始化USART2-Tx(PD5)
-	
+
 	GPIO_PinAFConfig(GPIOD,GPIO_PinSource5,GPIO_AF_USART2);//开启PD5的USART2复用模式
-	
+
 	/*===============配置USART和串口发送DMA===============*/
 	USART_InitTypeDef USART_InitStructure;
 	USART_InitStructure.USART_BaudRate=115200;//配置波特率115200
@@ -50,7 +50,7 @@ void StepMotor_HardwareInit(void)
 	USART_InitStructure.USART_StopBits=USART_StopBits_1;//配置停止位为1
 	USART_InitStructure.USART_WordLength=USART_WordLength_8b;//配置字长8bit
 	USART_Init(USART2,&USART_InitStructure);//初始化USART2
-	
+
 	DMA_InitTypeDef DMA_InitStructure;
 	DMA_InitStructure.DMA_Channel=DMA_Channel_4;//选择DMA通道4
 	DMA_InitStructure.DMA_Mode=DMA_Mode_Normal;//普通模式(非自动重装)
@@ -68,10 +68,10 @@ void StepMotor_HardwareInit(void)
 	DMA_InitStructure.DMA_FIFOMode=DMA_FIFOMode_Disable;//不使用FIFO模式
 	DMA_InitStructure.DMA_FIFOThreshold=DMA_FIFOStatus_1QuarterFull;//设置FIFO阈值为1/4(不使用FIFO模式时,此位无意义)
 	DMA_Init(DMA1_Stream6,&DMA_InitStructure);//初始化USART2-Tx数据流6
-	
+
 	/*===============配置定时器===============*/
 	TIM_InternalClockConfig(TIM6);//选择时基单元的时钟
-	
+
 	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure;//配置时基单元（配置参数）
 	TIM_TimeBaseInitStructure.TIM_ClockDivision=TIM_CKD_DIV1;//配置时钟分频为1分频
 	TIM_TimeBaseInitStructure.TIM_CounterMode=TIM_CounterMode_Up;//配置计数器模式为向上计数
@@ -84,16 +84,16 @@ void StepMotor_HardwareInit(void)
 
 	/*===============定时器中断===============*/
 	TIM_ITConfig(TIM6,TIM_IT_Update,ENABLE);//使能更新中断
-	
+
 	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_3);//选择NVIC分组
-	
+
 	NVIC_InitTypeDef NVIC_InitStructure;
 	NVIC_InitStructure.NVIC_IRQChannel=TIM6_DAC_IRQn;//选择TIM6中断通道
 	NVIC_InitStructure.NVIC_IRQChannelCmd=ENABLE;//使能中断通道
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority=5;//抢占优先级
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority=0;//响应优先级
 	NVIC_Init(&NVIC_InitStructure);//初始化USART6的NVIC
-	
+
 	/*===============使能===============*/
 	DMA_Cmd(DMA1_Stream6,ENABLE);//使能DMA1的数据流6
 	USART_DMACmd(USART2,USART_DMAReq_Tx,ENABLE);//使能串口USART2的DMA搬运
@@ -110,6 +110,7 @@ void StepMotor_HardwareInit(void)
 void StepMotor_DMAReset(uint8_t Size)
 {
 	while(DMA_GetFlagStatus(DMA1_Stream6,DMA_FLAG_TCIF6)==RESET);//判断发送完成
+	while(USART_GetFlagStatus(USART2,USART_FLAG_TC)==RESET);//等待最后一个字节真正发完
 	DMA_ClearFlag(DMA1_Stream6,DMA_FLAG_TCIF6);//清除发送完成标志位
 	DMA_Cmd(DMA1_Stream6,DISABLE);//失能DMA1的数据流6
 	while(DMA_GetCmdStatus(DMA1_Stream6)!=DISABLE);//检测DMA1的数据流6为可配置状态
@@ -129,14 +130,14 @@ void StepMotor_DMAReset(uint8_t Size)
  *	  Sync	多机同步标志 	0-不多机同步 1-多机同步
  */
 void StepMotor_ZDTENABLE(uint8_t ID)
-{	
+{
 	StepMotor_TxData[0]=ID;
 	StepMotor_TxData[1]=0xF3;
 	StepMotor_TxData[2]=0xAB;
 	StepMotor_TxData[3]=0x01;
 	StepMotor_TxData[4]=0x00;
 	StepMotor_TxData[5]=0x6B;
-	
+
 	StepMotor_DMAReset(6);
 }
 
@@ -168,7 +169,7 @@ void StepMotor_ZDTSetSpeed(uint8_t ID,int8_t Dir,uint16_t Speed,uint8_t Acc,uint
 	StepMotor_TxData[5]=Acc;
 	StepMotor_TxData[6]=Sync;
 	StepMotor_TxData[7]=0x6B;
-	
+
 	StepMotor_DMAReset(8);
 }
 
@@ -212,7 +213,7 @@ void StepMotor_ZDTSetPosition(uint8_t ID,int8_t Dir,uint16_t Speed,uint8_t Acc,u
 	StepMotor_TxData[10]=Mode;
 	StepMotor_TxData[11]=Sync;
 	StepMotor_TxData[12]=0x6B;
-	
+
 	StepMotor_DMAReset(13);
 }
 
@@ -231,7 +232,7 @@ void StepMotor_ZDTSyncMove(uint8_t ID)
 	StepMotor_TxData[1]=0xFF;
 	StepMotor_TxData[2]=0x66;
 	StepMotor_TxData[3]=0x6B;
-	
+
 	StepMotor_DMAReset(4);
 }
 
@@ -253,7 +254,7 @@ void StepMotor_ZDTStop(uint8_t ID,uint8_t Sync)
 	StepMotor_TxData[2]=0x98;
 	StepMotor_TxData[3]=Sync;
 	StepMotor_TxData[4]=0x6B;
-	
+
 	StepMotor_DMAReset(5);
 }
 
@@ -266,13 +267,13 @@ void StepMotor_ZDTStop(uint8_t ID,uint8_t Sync)
 void StepMotor_Init(void)
 {
 	StepMotor_HardwareInit();
-	
+
 	StepMotor_ZDTENABLE(1);Delay_us(500);
 	StepMotor_ZDTENABLE(2);Delay_us(500);
 	StepMotor_ZDTENABLE(3);Delay_us(500);
 	StepMotor_ZDTENABLE(4);Delay_us(500);
 	StepMotor_ZDTENABLE(5);Delay_us(500);
-	
+
 	TIM_Cmd(TIM6,ENABLE);//启动定时器
 }
 
@@ -314,7 +315,7 @@ void StepMotor_SetPosition(uint8_t ID,uint16_t Speed,uint32_t Step)
 	StepMotor_Target[ID-1].Speed=Speed;
 	StepMotor_Target[ID-1].Acc=0;
 	StepMotor_Target[ID-1].Step=Step;
-	
+
 	StepMotor_Target[ID-1]._Flag=0;
 }
 
@@ -332,8 +333,111 @@ void StepMotor_SetPositionExt(uint8_t ID,uint16_t Speed,uint8_t Acc,uint32_t Ste
 	StepMotor_Target[ID-1].Speed=Speed;
 	StepMotor_Target[ID-1].Acc=Acc;
 	StepMotor_Target[ID-1].Step=Step;
-	
+
 	StepMotor_Target[ID-1]._Flag=0;
+}
+
+/*
+ *函数简介:步进底盘位置模式开始
+ *参数说明:无
+ *返回类型:无
+ *备注:暂停TIM6速度轮询,避免位置运动过程中被速度帧打断
+ */
+void StepMotor_PositionModeBegin(void)
+{
+	TIM_Cmd(TIM6,DISABLE);
+	for(uint8_t i=0;i<4;i++)
+	{
+		StepMotor_Target[i].Dir=0;
+		StepMotor_Target[i].Speed=0;
+		StepMotor_Target[i]._Flag=1;
+	}
+}
+
+/*
+ *函数简介:步进立即相对位置设置
+ *参数说明:ID		ID
+ *参数说明:Step		相对位置脉冲数,正负表示方向
+ *参数说明:Speed	速度	单位RPM
+ *参数说明:Acc		加速度
+ *返回类型:无
+ *备注:Sync=0,单个驱动器收到后立即执行,用于位置模式最小验证
+ */
+void StepMotor_SetPositionNow(uint8_t ID,int32_t Step,uint16_t Speed,uint8_t Acc)
+{
+	uint8_t Dir;
+	uint32_t AbsStep;
+
+	if(ID<1 || ID>4 || Step==0)return;
+	if(Step>=0)
+	{
+		Dir=0;
+		AbsStep=(uint32_t)Step;
+	}
+	else
+	{
+		Dir=1;
+		AbsStep=(uint32_t)(-Step);
+	}
+
+	StepMotor_ZDTSetPosition(ID,Dir,Speed,Acc,AbsStep,0,0);
+}
+
+/*
+ *函数简介:步进同步相对位置设置
+ *参数说明:ID		ID
+ *参数说明:Step		相对位置脉冲数,正负表示方向
+ *参数说明:Speed	速度	单位RPM
+ *参数说明:Acc		加速度
+ *返回类型:无
+ *备注:只装载指令,Sync=1,需要随后调用StepMotor_SyncMove统一启动
+ */
+void StepMotor_SetPositionSync(uint8_t ID,int32_t Step,uint16_t Speed,uint8_t Acc)
+{
+	uint8_t Dir;
+	uint32_t AbsStep;
+
+	if(ID<1 || ID>4 || Step==0)return;
+	if(Step>=0)
+	{
+		Dir=0;
+		AbsStep=(uint32_t)Step;
+	}
+	else
+	{
+		Dir=1;
+		AbsStep=(uint32_t)(-Step);
+	}
+
+	StepMotor_ZDTSetPosition(ID,Dir,Speed,Acc,AbsStep,0,1);
+}
+
+/*
+ *函数简介:步进多机同步启动
+ *参数说明:无
+ *返回类型:无
+ *备注:广播同步运动命令
+ */
+void StepMotor_SyncMove(void)
+{
+	StepMotor_ZDTSyncMove(0);
+}
+
+/*
+ *函数简介:步进底盘位置模式结束
+ *参数说明:无
+ *返回类型:无
+ *备注:恢复TIM6速度轮询,后续速度模式仍可继续使用
+ */
+void StepMotor_PositionModeEnd(void)
+{
+	for(uint8_t i=0;i<4;i++)
+	{
+		StepMotor_Target[i].Dir=0;
+		StepMotor_Target[i].Speed=0;
+		StepMotor_Target[i]._Flag=1;
+	}
+	TIM_Cmd(TIM6,ENABLE);
 }
 
 /*
@@ -347,7 +451,7 @@ void StepMotor_Callack(void)
 {
 	static uint8_t Count=0;
 	Count=(Count+1)%6;
-	
+
 	switch(Count)
 	{
 		case 0:

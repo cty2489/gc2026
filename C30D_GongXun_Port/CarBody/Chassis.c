@@ -15,6 +15,50 @@
 #define Chassis_RightRearWheel		3//右后轮
 
 /*
+ * 初始位置模式标定值。
+ * 当前先按100mm轮、32细分附近的经验值起跑；换75mm轮或修改细分后必须重新标定。
+ * 理论参考: 75mm轮、16细分约13.6 pulse/mm, 75mm轮、32细分约27.2 pulse/mm。
+ */
+#define Chassis_PulsePerMM_Forward	21.0f
+#define Chassis_PulsePerMM_Backward	21.0f
+#define Chassis_PulsePerMM_Left		20.6f
+#define Chassis_PulsePerMM_Right	20.6f
+#define Chassis_PositionPulsePerRev	6400.0f
+#define Chassis_PositionMinWaitMS	300.0f
+#define Chassis_PositionWaitMarginMS	500.0f
+#define Chassis_PositionUseGuiWei	0
+
+static uint32_t Chassis_AbsStep(float DistanceMM,float PulsePerMM)
+{
+	float Step=fabsf(DistanceMM)*PulsePerMM+0.5f;
+	if(Step<1.0f)return 0;
+	if(Step>4294967295.0f)return 0xFFFFFFFF;
+	return (uint32_t)Step;
+}
+
+static uint32_t Chassis_MaxStep(uint32_t A,uint32_t B,uint32_t C,uint32_t D)
+{
+	uint32_t Max=A;
+	if(B>Max)Max=B;
+	if(C>Max)Max=C;
+	if(D>Max)Max=D;
+	return Max;
+}
+
+static uint32_t Chassis_PositionWaitTime(uint32_t Step,uint16_t Speed,uint8_t Acc)
+{
+	float TimeMS;
+
+	if(Step==0 || Speed==0)return (uint32_t)Chassis_PositionMinWaitMS;
+	TimeMS=60000.0f*(float)Step/(Chassis_PositionPulsePerRev*(float)Speed);
+	if(Acc>0)TimeMS+=2000.0f*(float)Speed/(float)Acc;
+	TimeMS+=Chassis_PositionWaitMarginMS;
+	if(TimeMS<Chassis_PositionMinWaitMS)TimeMS=Chassis_PositionMinWaitMS;
+	if(TimeMS>60000.0f)TimeMS=60000.0f;
+	return (uint32_t)TimeMS;
+}
+
+/*
  *函数简介:底盘初始化
  *参数说明:无
  *返回类型:无
@@ -24,7 +68,7 @@ void Chassis_Init(void)
 {
 	HWT101_Init();
 	StepMotor_Init();
-	
+
 	Chassis_PID_Init();
 	Chassis_PathInit();
 }
@@ -54,7 +98,7 @@ void Chassis_InverseMotionControl(float v_x,float v_y,float w)
 	int32_t RightFront=v_x-v_y-w;	//右前轮
 	int32_t LeftRear=-v_x+v_y-w;	//左后轮
 	int32_t RightRear=-v_x-v_y-w;	//右后轮
-	
+
 	StepMotor_SetSpeed(Chassis_LeftFrontWheel,LeftFront);
 	StepMotor_SetSpeed(Chassis_RightFrontWheel,RightFront);
 	StepMotor_SetSpeed(Chassis_LeftRearWheel,LeftRear);
@@ -72,7 +116,7 @@ void Chassis_InverseMotionControl(float v_x,float v_y,float w)
 void Chassis_SetSpeed(float vx,float vy,float theta)
 {
 	theta=theta*Data_Deg2Rad;
-	
+
 	float vx_=vx*cosf(theta)+vy*sinf(theta);
 	float vy_=-vx*sinf(theta)+vy*cosf(theta);
 
@@ -109,9 +153,9 @@ void Chassis_SINAccel(float vx1,float vy1,float vx2,float vy2,float Angle,float 
 void Chassis_GuiWei(void)
 {
 	#define GuiWeiTime	50//归位时间,理论上归位时间为2ms*GuiWeiTime
-	
+
 	float SaveKp=Chassis_AnglePID.Kp,SaveKi=Chassis_AnglePID.Ki,SaveKd=Chassis_AnglePID.Kd;//保存YawPID的参数
-	
+
 	PID_PositionSetParameter(&Chassis_AnglePID,10,0,3);//调硬PID
 	for(int i=0;i<GuiWeiTime;i++)
 	{
@@ -139,19 +183,95 @@ void Chassis_MoveOnce(float vx,float vy,float Delta_Angle,float t,float K)
 
 	/*===============加速段===============*/
 	Chassis_SINAccel(0,0,vx,vy,Start_Angle,K);//采用正弦加减速
-	
+
 	/*===============匀速段===============*/
 	for(uint16_t i=0;i<t;i++)
 	{
 		Chassis_SetSpeed(vx,vy,HWT101_Yaw-Start_Angle);
 		Delay_ms(2);
 	}
-	
+
 	/*===============减速段===============*/
 	Chassis_SINAccel(vx,vy,0,0,Start_Angle,K);//采用正弦加减速
 
 	Chassis_GuiWei();
 	Chassis_InverseMotionControl(0,0,0);
+	Chassis_InverseMotionControl(0,0,0);
+}
+
+/*
+ *函数简介:底盘按距离移动
+ *参数说明:x_mm		横向距离	向右为正,单位mm
+ *参数说明:y_mm		纵向距离	向前为正,单位mm
+ *参数说明:Speed	位置模式速度	单位RPM
+ *参数说明:Acc		位置模式加速度
+ *返回类型:无
+ *备注:采用张大头相对位置模式+多机同步启动,斜向位移会拆成先纵向后横向
+ */
+void Chassis_MoveDistance(float x_mm,float y_mm,uint16_t Speed,uint8_t Acc)
+{
+	int32_t LeftFront=0,RightFront=0,LeftRear=0,RightRear=0;
+	uint32_t LeftFrontAbs=0,RightFrontAbs=0,LeftRearAbs=0,RightRearAbs=0,MaxStep=0;
+	uint32_t Step;
+
+	if(fabsf(x_mm)<0.01f && fabsf(y_mm)<0.01f)
+	{
+#if Chassis_PositionUseGuiWei
+		Chassis_GuiWei();
+#endif
+		return;
+	}
+
+	if(fabsf(x_mm)>=0.01f && fabsf(y_mm)>=0.01f)
+	{
+		Chassis_MoveDistance(0,y_mm,Speed,Acc);
+		Delay_ms(100);
+		Chassis_MoveDistance(x_mm,0,Speed,Acc);
+		return;
+	}
+
+	if(fabsf(y_mm)>=0.01f)
+	{
+		Step=Chassis_AbsStep(y_mm,y_mm>0?Chassis_PulsePerMM_Forward:Chassis_PulsePerMM_Backward);
+		if(Step==0)return;
+		LeftFront=(y_mm>0)?(int32_t)Step:-(int32_t)Step;
+		RightFront=-LeftFront;
+		LeftRear=LeftFront;
+		RightRear=-LeftFront;
+	}
+	else
+	{
+		Step=Chassis_AbsStep(x_mm,x_mm>0?Chassis_PulsePerMM_Right:Chassis_PulsePerMM_Left);
+		if(Step==0)return;
+		LeftFront=(x_mm>0)?(int32_t)Step:-(int32_t)Step;
+		RightFront=LeftFront;
+		LeftRear=-LeftFront;
+		RightRear=-LeftFront;
+	}
+
+	LeftFrontAbs=(LeftFront>=0)?(uint32_t)LeftFront:(uint32_t)(-LeftFront);
+	RightFrontAbs=(RightFront>=0)?(uint32_t)RightFront:(uint32_t)(-RightFront);
+	LeftRearAbs=(LeftRear>=0)?(uint32_t)LeftRear:(uint32_t)(-LeftRear);
+	RightRearAbs=(RightRear>=0)?(uint32_t)RightRear:(uint32_t)(-RightRear);
+	MaxStep=Chassis_MaxStep(LeftFrontAbs,RightFrontAbs,LeftRearAbs,RightRearAbs);
+
+	StepMotor_PositionModeBegin();
+	Delay_ms(5);
+	StepMotor_SetPositionSync(Chassis_LeftFrontWheel,LeftFront,Speed,Acc);
+	Delay_ms(5);
+	StepMotor_SetPositionSync(Chassis_RightFrontWheel,RightFront,Speed,Acc);
+	Delay_ms(5);
+	StepMotor_SetPositionSync(Chassis_LeftRearWheel,LeftRear,Speed,Acc);
+	Delay_ms(5);
+	StepMotor_SetPositionSync(Chassis_RightRearWheel,RightRear,Speed,Acc);
+	Delay_ms(5);
+	StepMotor_SyncMove();
+	Delay_ms(Chassis_PositionWaitTime(MaxStep,Speed,Acc));
+	StepMotor_PositionModeEnd();
+
+#if Chassis_PositionUseGuiWei
+	Chassis_GuiWei();
+#endif
 	Chassis_InverseMotionControl(0,0,0);
 }
 
@@ -192,34 +312,34 @@ void Chassis_MovePath(Chassis_Path Path)
 	//确定第一段路径前进方向
 	float Path0_Start_Angle=Chassis_AnglePID.Need_Value;
 	Chassis_AnglePID.Need_Value+=Path.Path[0].Delta_Angle;//第一段路径Yaw角度期望
-	
+
 	/*===============第一段加速段===============*/
 	Chassis_SINAccel(0,0,Path.Path[0].vx,Path.Path[0].vy,Path0_Start_Angle,Path.Path[0].K);//采用正弦加减速
-	
+
 	/*===============第一段匀速段===============*/
 	for(uint16_t j=0;j<Path.Path[0].t;j++)
 	{
 		Chassis_SetSpeed(Path.Path[0].vx,Path.Path[0].vy,HWT101_Yaw-Path0_Start_Angle);
 		Delay_ms(2);
 	}
-	
+
 	/*===============第二段到倒数第二段(i=1~Path_Size-1)===============*/
 	for(uint8_t i=1;i<Path.Path_Size-1;i++)
 	{
 		//确定第i段路径前进方向
 		float Start_Angle=Chassis_AnglePID.Need_Value;
 		Chassis_AnglePID.Need_Value+=Path.Path[i].Delta_Angle;//第i段路径Yaw角度期望
-		
+
 		float vx1=Path.Path[i-1].vx,vy1=Path.Path[i-1].vy;
 		float vx2=Path.Path[i].vx,vy2=Path.Path[i].vy;
-		
+
 		float theta=Path.Path[i-1].Delta_Angle*Data_Deg2Rad;
 		float vx1_=vx1*cosf(theta)+vy1*sinf(theta);
 		float vy1_=-vx1*sinf(theta)+vy1*cosf(theta);
-		
+
 		/*===============第i-1段到第i段的过渡态===============*/
 		Chassis_SINAccel(vx1_,vy1_,vx2,vy2,Start_Angle,Path.Path[i].K);//采用正弦加减速
-		
+
 		/*===============第i段匀速段===============*/
 		for(uint16_t j=0;j<Path.Path[i].t;j++)
 		{
@@ -227,28 +347,28 @@ void Chassis_MovePath(Chassis_Path Path)
 			Delay_ms(2);
 		}
 	}
-	
+
 	//确定最后一段路径前进方向
 	float PathEnd_Start_Angle=Chassis_AnglePID.Need_Value;
 	Chassis_AnglePID.Need_Value+=Path.Path[Path.Path_Size-1].Delta_Angle;//最后一段路径Yaw角度期望
-		
+
 	float vx1=Path.Path[Path.Path_Size-2].vx,vy1=Path.Path[Path.Path_Size-2].vy;
 	float vx2=Path.Path[Path.Path_Size-1].vx,vy2=Path.Path[Path.Path_Size-1].vy;
 
 	float theta=Path.Path[Path.Path_Size-2].Delta_Angle*Data_Deg2Rad;
 	float vx1_=vx1*cosf(theta)+vy1*sinf(theta);
 	float vy1_=-vx1*sinf(theta)+vy1*cosf(theta);
-	
+
 	/*===============倒数第二段到最后一段的过渡态===============*/
 	Chassis_SINAccel(vx1_,vy1_,vx2,vy2,PathEnd_Start_Angle,Path.Path[Path.Path_Size-1].K);//采用正弦加减速
-	
+
 	/*===============最后一段匀速段===============*/
 	for(uint16_t j=0;j<Path.Path[Path.Path_Size-1].t;j++)
 	{
 		Chassis_SetSpeed(vx2,vy2,HWT101_Yaw-PathEnd_Start_Angle);
 		Delay_ms(2);
 	}
-	
+
 	/*===============最后一段减速段===============*/
 	Chassis_SINAccel(vx2,vy2,0,0,PathEnd_Start_Angle,Path.End_K);//采用正弦加减速
 
@@ -288,7 +408,7 @@ void Chassis_TurnRight(void)
 	{
 		PID_PositionCalc(&Chassis_AnglePID,HWT101_Yaw);
 		if(Chassis_AnglePID.Ek==0 && Chassis_AnglePID.Ek_1==0)break;
-		
+
 		Chassis_InverseMotionControl(0,0,Chassis_AnglePID.OUT);
 		Delay_ms(2);
 	}
@@ -306,23 +426,23 @@ void Chassis_TurnRight(void)
 void Chassis_WuLiaoOrientate(Orientation_PIDStruct *OrientationPID,zpc_zxc_Color Color,uint16_t TimeOut)
 {
 	static uint16_t TimeCount=0;
-	
+
 	while(1)
 	{
 		TimeCount++;
 		PID_PositionCalc(&OrientationPID->OrientationX,Camera_WuLiao[Color][X]);
 		PID_PositionCalc(&OrientationPID->OrientationY,Camera_WuLiao[Color][Y]);
 		PID_PositionCalc(&Chassis_AnglePID,HWT101_Yaw);
-		
+
 		Chassis_InverseMotionControl(OrientationPID->OrientationY.OUT,OrientationPID->OrientationX.OUT,Chassis_AnglePID.OUT);
 		if(OrientationPID->OrientationX.Ek==0 && OrientationPID->OrientationX.Ek_1==0 && OrientationPID->OrientationY.Ek==0 && OrientationPID->OrientationY.Ek_1==0)break;
-		
+
 		if(TimeCount==TimeOut)break;
 		Delay_ms(2);
 	}
 	TimeCount=0;
-	
-	Chassis_InverseMotionControl(0,0,0);	
+
+	Chassis_InverseMotionControl(0,0,0);
 }
 
 /*
@@ -337,22 +457,22 @@ void Chassis_SeHuanOrientate(Orientation_PIDStruct *OrientationPID,zpc_zxc_Color
 {
 	static uint16_t TimeCount=0;
 	static uint8_t Count=0;//PID误差0计数
-	
+
 	while(1)
 	{
 		TimeCount++;
 		PID_PositionCalc(&OrientationPID->OrientationX,Camera_SeHuan[Color][X]);
 		PID_PositionCalc(&OrientationPID->OrientationY,Camera_SeHuan[Color][Y]);
 		PID_PositionCalc(&Chassis_AnglePID,HWT101_Yaw);
-		
+
 		Chassis_InverseMotionControl(OrientationPID->OrientationY.OUT,OrientationPID->OrientationX.OUT,Chassis_AnglePID.OUT);
 		if(OrientationPID->OrientationX.Ek==0 && OrientationPID->OrientationX.Ek_1==0 && OrientationPID->OrientationY.Ek==0 && OrientationPID->OrientationY.Ek_1==0)Count++;
 		if(Count>20){Count=0;break;}//PID误差0足够一段时间
-		
+
 		if(TimeCount==TimeOut)break;
 		Delay_ms(2);
 	}
 	TimeCount=0;
-	
-	Chassis_InverseMotionControl(0,0,0);	
+
+	Chassis_InverseMotionControl(0,0,0);
 }
